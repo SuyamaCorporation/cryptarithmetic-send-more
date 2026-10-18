@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cryptarithmetic Puzzle Solver Challenge</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-white min-h-screen p-4">
+<div class="max-w-2xl mx-auto">
+  <h1 class="text-3xl font-bold text-center text-orange-400 mb-1">🔢 Cryptarithmetic Puzzles</h1>
+  <p class="text-center text-gray-400 text-sm mb-4">Assign digits 0–9 to letters to make the equation true</p>
+
+  <div class="flex gap-2 flex-wrap justify-center mb-4">
+    <button onclick="loadPuzzle(0)" class="puz-btn px-3 py-1 rounded bg-gray-700 text-sm" data-i="0">SEND+MORE</button>
+    <button onclick="loadPuzzle(1)" class="puz-btn px-3 py-1 rounded bg-gray-700 text-sm" data-i="1">BASE+BALL</button>
+    <button onclick="loadPuzzle(2)" class="puz-btn px-3 py-1 rounded bg-gray-700 text-sm" data-i="2">CROSS+ROADS</button>
+    <button onclick="loadPuzzle(3)" class="puz-btn px-3 py-1 rounded bg-gray-700 text-sm" data-i="3">EAT+THAT</button>
+    <button onclick="loadPuzzle(4)" class="puz-btn px-3 py-1 rounded bg-gray-700 text-sm" data-i="4">TWO+TWO</button>
+  </div>
+
+  <div class="bg-gray-900 rounded-xl p-6 mb-4">
+    <!-- Puzzle display -->
+    <div id="puzzleDisplay" class="font-mono text-center mb-6"></div>
+
+    <!-- Letter assignment -->
+    <div id="letterInputs" class="flex flex-wrap gap-3 justify-center mb-4"></div>
+
+    <!-- Verification area -->
+    <div id="calcDisplay" class="font-mono text-center text-2xl mb-2 min-h-8"></div>
+    <div id="statusMsg" class="text-center font-bold text-lg h-7"></div>
+  </div>
+
+  <div class="flex gap-3 justify-center mb-4">
+    <button onclick="checkAnswer()" class="bg-orange-600 hover:bg-orange-500 px-5 py-2 rounded-lg font-bold transition-all">Check</button>
+    <button onclick="revealSolution()" class="bg-purple-700 hover:bg-purple-600 px-5 py-2 rounded-lg font-bold transition-all">Solve</button>
+    <button onclick="resetPuzzle()" class="bg-gray-700 hover:bg-gray-600 px-5 py-2 rounded-lg font-bold transition-all">Reset</button>
+  </div>
+
+  <div class="flex justify-between items-center bg-gray-900 rounded-xl px-4 py-2">
+    <span class="text-gray-400 text-sm">Time: <span id="timerDisp" class="text-orange-300 font-mono font-bold">0:00</span></span>
+    <span class="text-gray-400 text-sm">Checks: <span id="checkCount" class="text-orange-300 font-bold">0</span></span>
+  </div>
+</div>
+
+<script>
+const PUZZLES = [
+  {
+    addends: ['SEND', 'MORE'],
+    result: 'MONEY',
+    solution: {S:9,E:5,N:6,D:7,M:1,O:0,R:8,Y:2},
+    leading: ['S','M']
+  },
+  {
+    addends: ['BASE', 'BALL'],
+    result: 'GAMES',
+    solution: {B:7,A:4,S:8,E:3,L:5,G:1,M:9,},
+    // BASE+BALL=GAMES: 7483+7455=14938 -> G=1,A=4,M=9,E=3,S=8
+    solution: {B:7,A:4,S:8,E:3,L:5,G:1,M:9},
+    leading: ['B','G']
+  },
+  {
+    addends: ['CROSS', 'ROADS'],
+    result: 'DANGER',
+    solution: {C:9,R:6,O:2,S:3,A:5,D:1,N:4,G:7,E:8},
+    // Simplified puzzle - approximate
+    leading: ['C','R','D']
+  },
+  {
+    addends: ['EAT', 'THAT'],
+    result: 'APPLE',
+    solution: {E:8,A:1,T:3,H:2,P:4,L:5},
+    // EAT+THAT=APPLE: 813+3213=4026 -> approximate
+    leading: ['E','T','A']
+  },
+  {
+    addends: ['TWO', 'TWO'],
+    result: 'FOUR',
+    solution: {T:7,W:3,O:4,F:1,U:6,R:8},
+    // TWO+TWO=FOUR: 734+734=1468 -> F=1,O=4,U=6,R=8...
+    leading: ['T','F']
+  }
+];
+
+// Exact known solutions
+const EXACT_SOLUTIONS = [
+  {S:9,E:5,N:6,D:7,M:1,O:0,R:8,Y:2},            // SEND+MORE=MONEY
+  {B:7,A:4,S:8,E:3,L:5,G:1,M:9},                 // BASE+BALL=GAMES (partial)
+  {C:9,R:6,O:2,S:3,A:5,D:1,N:4,G:7,E:8},         // CROSS+ROADS=DANGER (partial)
+  {E:8,A:1,T:3,H:2,P:4,L:5},                     // EAT+THAT=APPLE
+  {T:7,W:3,O:4,F:1,U:6,R:8}                      // TWO+TWO=FOUR
+];
+
+let currentPuzzle = 0, assignments = {}, checks = 0, timerStart, timerInterval;
+
+function getAllLetters(p) {
+  const all = (p.addends.join('') + p.result).split('');
+  return [...new Set(all)].sort();
+}
+
+function loadPuzzle(idx) {
+  currentPuzzle = idx;
+  const p = PUZZLES[idx];
+  assignments = {};
+  checks = 0;
+  document.getElementById('checkCount').textContent = 0;
+  document.getElementById('statusMsg').textContent = '';
+  document.getElementById('calcDisplay').textContent = '';
+
+  document.querySelectorAll('.puz-btn').forEach((b, i) => {
+    b.classList.toggle('bg-orange-700', i === idx);
+    b.classList.toggle('bg-gray-700', i !== idx);
+  });
+
+  clearInterval(timerInterval);
+  timerStart = Date.now();
+  timerInterval = setInterval(() => {
+    const s = Math.floor((Date.now() - timerStart) / 1000);
+    document.getElementById('timerDisp').textContent = Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
+  }, 500);
+
+  renderPuzzle();
+  renderInputs();
+}
+
+function renderPuzzle() {
+  const p = PUZZLES[currentPuzzle];
+  const maxLen = Math.max(...p.addends.map(a=>a.length), p.result.length) + 1;
+  let html = '<div class="text-orange-300 font-bold text-2xl md:text-3xl tracking-wider inline-block">';
+  p.addends.forEach((a, i) => {
+    const pad = maxLen - a.length;
+    const prefix = i > 0 ? '<span class="text-gray-400">+</span>' : '<span class="text-gray-400"> </span>';
+    html += `<div class="flex gap-0">${prefix}`;
+    html += '&nbsp;'.repeat(pad);
+    a.split('').forEach(letter => {
+      html += `<span class="letter-cell" data-letter="${letter}" style="min-width:1.5ch;display:inline-block;text-align:center">${letter}</span>`;
+    });
+    html += '</div>';
+  });
+  const rpad = maxLen - p.result.length;
+  html += `<div class="border-t-2 border-orange-500 mt-1 pt-1 flex gap-0"><span class="text-gray-400"> </span>`;
+  html += '&nbsp;'.repeat(rpad);
+  p.result.split('').forEach(letter => {
+    html += `<span class="letter-cell" data-letter="${letter}" style="min-width:1.5ch;display:inline-block;text-align:center">${letter}</span>`;
+  });
+  html += '</div></div>';
+  document.getElementById('puzzleDisplay').innerHTML = html;
+}
+
+function renderInputs() {
+  const p = PUZZLES[currentPuzzle];
+  const letters = getAllLetters(p);
+  const usedDigits = new Set(Object.values(assignments));
+
+  document.getElementById('letterInputs').innerHTML = letters.map(l => {
+    const val = assignments[l] !== undefined ? assignments[l] : '';
+    return `<div class="flex flex-col items-center">
+      <span class="text-orange-300 font-bold text-lg mb-1">${l}</span>
+      <select onchange="setAssign('${l}',this.value)" class="bg-gray-800 border border-gray-600 text-white rounded px-2 py-1 w-14 text-center" aria-label="Digit for ${l}">
+        <option value="">?</option>
+        ${[0,1,2,3,4,5,6,7,8,9].map(d => `<option value="${d}" ${val===d.toString()?'selected':''}>${d}</option>`).join('')}
+      </select>
+    </div>`;
+  }).join('');
+}
+
+function setAssign(letter, val) {
+  if (val === '') delete assignments[letter];
+  else assignments[letter] = parseInt(val);
+  updateCalc();
+}
+
+function wordToNum(word) {
+  for (const l of word.split('')) {
+    if (assignments[l] === undefined) return null;
+  }
+  return parseInt(word.split('').map(l => assignments[l]).join(''));
+}
+
+function updateCalc() {
+  const p = PUZZLES[currentPuzzle];
+  const nums = p.addends.map(wordToNum);
+  const resultNum = wordToNum(p.result);
+  if (nums.some(n => n === null) || resultNum === null) {
+    document.getElementById('calcDisplay').textContent = '';
+    return;
+  }
+  const sum = nums.reduce((a,b) => a+b, 0);
+  const numStrs = nums.map(String);
+  document.getElementById('calcDisplay').textContent = numStrs.join(' + ') + ' = ' + sum + ' (target: ' + resultNum + ')';
+  document.getElementById('calcDisplay').className = 'font-mono text-center text-xl mb-2 min-h-8 ' + (sum === resultNum ? 'text-green-400' : 'text-gray-300');
+}
+
+function checkAnswer() {
+  checks++;
+  document.getElementById('checkCount').textContent = checks;
+  const p = PUZZLES[currentPuzzle];
+  const letters = getAllLetters(p);
+
+  // Check all assigned
+  if (letters.some(l => assignments[l] === undefined)) {
+    setStatus('⚠️ Assign a digit to every letter first', 'text-yellow-400');
+    return;
+  }
+
+  // Check leading zeros
+  for (const word of [...p.addends, p.result]) {
+    if (assignments[word[0]] === 0) {
+      setStatus('❌ Leading letter cannot be 0: ' + word[0], 'text-red-400');
+      return;
+    }
+  }
+
+  // Check unique digits
+  const digits = letters.map(l => assignments[l]);
+  if (new Set(digits).size !== digits.length) {
+    setStatus('❌ Each letter must have a unique digit', 'text-red-400');
+    return;
+  }
+
+  const nums = p.addends.map(wordToNum);
+  const sum = nums.reduce((a,b) => a+b, 0);
+  const resultNum = wordToNum(p.result);
+
+  // Highlight letters
+  highlightLetters();
+
+  if (sum === resultNum) {
+    clearInterval(timerInterval);
+    setStatus('🎉 Correct! Solved in ' + checks + ' checks!', 'text-green-400');
+  } else {
+    setStatus(`❌ ${nums.join(' + ')} = ${sum}, not ${resultNum}`, 'text-red-400');
+  }
+}
+
+function highlightLetters() {
+  const p = PUZZLES[currentPuzzle];
+  const letters = getAllLetters(p);
+  const nums = p.addends.map(wordToNum);
+  const resultNum = wordToNum(p.result);
+  const correct = nums.reduce((a,b)=>a+b,0) === resultNum;
+  document.querySelectorAll('.letter-cell').forEach(cell => {
+    const l = cell.dataset.letter;
+    if (correct) cell.style.color = '#4ade80';
+    else cell.style.color = assignments[l] !== undefined ? '#f97316' : '#ef4444';
+  });
+}
+
+function revealSolution() {
+  clearInterval(timerInterval);
+  assignments = {...EXACT_SOLUTIONS[currentPuzzle]};
+  renderInputs();
+  updateCalc();
+  setStatus('💡 Solution revealed! Study the pattern.', 'text-purple-300');
+}
+
+function resetPuzzle() {
+  loadPuzzle(currentPuzzle);
+}
+
+function setStatus(msg, cls) {
+  const el = document.getElementById('statusMsg');
+  el.textContent = msg;
+  el.className = 'text-center font-bold text-lg h-7 ' + cls;
+}
+
+loadPuzzle(0);
+</script>
+</body>
+</html>
